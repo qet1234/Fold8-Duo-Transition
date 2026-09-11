@@ -23,7 +23,7 @@ class DuoPresentation(
         setContentView(transitionView)
     }
 
-    fun update(progress: Float) {
-        if (::transitionView.isInitialized) transitionView.setProgress(progress)
+    fun update(progress: Float, velocity: Float) {
+        if (::transitionView.isInitialized) transitionView.setMotion(progress, velocity)
     }
 }
