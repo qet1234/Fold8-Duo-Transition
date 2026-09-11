@@ -1,5 +1,32 @@
 # Galaxy Z Fold8 — Duo Home Launcher
 
+## v0.3.1 — Fold8 Ultra hinge diagnostics
+
+Install the **Fold8Ultra-HingeCheck** artifact for the sensor test. Its application ID is
+`com.qet1234.fold8duotransition.diagnostics`, independent of the existing launcher.
+It has no HOME intent filter and does not ask to become the default home app.
+
+1. Install `app-diagnostic.apk` and open **힌지 센서 진단**.
+2. Slowly fold/unfold the device, pause at several positions, and reverse direction.
+3. Check whether the measured number changes. **—°** means no measurement yet, not zero degrees.
+4. Tap **결과 복사** and paste into the chat, or choose a destination with **결과 공유**.
+
+The target is the user's reported Fold8 Ultra. No model codes, angle endpoints, or
+compatibility are presumed verified. The report contains the actual Build.MODEL,
+Android version, window dimensions, standard sensor metadata, observed range and
+the latest 200 raw samples. It excludes identifiers such as serial numbers and
+installed app lists. No network permission or automatic report upload is used.
+
+Measurements are unfiltered. Invalid/out-of-order samples are excluded and counted.
+History is bounded to 1,000 samples; background pauses create separate graph segments.
+Stationary on-change sensors may stop sending events normally. A missing standard
+sensor is distinguished from registration failure and waiting for measurements.
+If Android recreates the process, the last report can be copied on the next launch.
+This test does not validate physical accuracy or prove continuous angle support.
+
+Build: `gradle :app:testDebugUnitTest :app:lintDiagnostic :app:assembleDiagnostic`.
+The existing launcher debug APK continues to be built separately.
+
 `Duo Home` is a native Android launcher experiment for the Galaxy Z Fold8. It turns the previous hinge-animation POC into a usable HOME app while keeping the fold/unfold transition tied to the physical hinge angle.
 
 ## v0.3.0

@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -17,9 +20,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build debug APK
-        run: gradle :app:assembleDebug
+      - name: Test measurements and build APKs
+        run: gradle :app:testDebugUnitTest :app:lintDiagnostic :app:assembleDebug :app:assembleDiagnostic
       - uses: actions/upload-artifact@v4
         with:
           name: Fold8DuoTransition-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload standalone hinge diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Fold8Ultra-HingeCheck
+          path: app/build/outputs/apk/diagnostic/app-diagnostic.apk
+          if-no-files-found: error

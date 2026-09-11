@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application android:label="힌지 센서 진단" android:allowBackup="false"
+        tools:replace="android:label,android:allowBackup">
+        <!-- A diagnostic installation is not a HOME candidate and cannot replace the launcher. -->
+        <activity android:name=".MainActivity" tools:node="remove" />
+    </application>
+</manifest>
