@@ -1,33 +1,45 @@
-# Galaxy Z Fold8 — iPhone Duo-style hinge transition POC
+# Galaxy Z Fold8 — Duo Home Launcher
 
-This project is a native Android proof of concept that ties the Fold8 hinge angle to an Apple-like fold/unfold transition.
+`Duo Home` is a native Android launcher experiment for the Galaxy Z Fold8. It turns the previous hinge-animation POC into a usable HOME app while keeping the fold/unfold transition tied to the physical hinge angle.
 
-1. Read `Sensor.TYPE_HINGE_ANGLE`.
-2. Normalize the physical hinge angle to 0…1.
-3. Feed that progress into Android **AGSL / RuntimeShader**.
-4. Warp, blur, shade, and crossfade the cover/inner visual around the hinge.
-5. Attach a `Presentation` to any secondary display Android exposes to the app.
+## v0.3.0
+
+- Registers as an Android HOME launcher (`ACTION_MAIN` + `CATEGORY_HOME`).
+- Requests the official Android `ROLE_HOME` so the user can choose Duo Home as the default home app.
+- Queries real installed launchable apps and renders their real icons and labels.
+- Tapping an icon launches the actual installed app.
+- Uses a 4-column cover layout and 6-column inner layout.
+- Interpolates the same app index between cover and inner coordinates from hinge progress so icons morph instead of snapping.
+- Adds speed-reactive blur during the middle of the fold.
+- Keeps AGSL for the animated wallpaper/background only; fake icons and fake widgets were removed.
+- Falls back to a stable Canvas renderer if AGSL fails on the device GPU.
+- Supports vertical scrolling when many apps are installed.
+
+## Install / use
+
+1. Install the debug APK on the Galaxy Z Fold8.
+2. Open **Duo Home**.
+3. Tap **기본 홈 앱으로 설정**.
+4. Choose **Duo Home** as the default Home app.
+5. Press the Android Home gesture/button to return to Duo Home.
+6. Fold and unfold the phone while on the home screen to test the transition.
 
 ## Important limitation
 
-This is **not a SystemUI / One UI patch** and it does not replace Samsung's system fold animation. A normal third-party app cannot override that transition globally. This repository is a visual POC app for testing the hinge-driven effect on real hardware.
+This is a real launcher, but it is still **not a Samsung SystemUI / One UI patch**. The transition is controlled while Duo Home is the active home screen. A normal third-party launcher cannot globally replace Samsung's fold transition while another app is on screen.
 
-## First run
+The Good Lock / private-hook route is intentionally not part of the stable build yet because it can break after One UI updates and can cause launcher instability.
 
-No private screenshots are needed. `DuoTransitionView.kt` generates test cover/inner home-screen mockups in code so the project can build and run immediately.
+## Hinge calibration
 
-After the hinge behavior is verified on-device, you can replace `createHomeMock()` with a screenshot-loading path if you want the demo to resemble your actual Fold8 home screens.
-
-## Device calibration
-
-The top-left overlay shows the raw hinge angle. Tune the endpoints in `HingeAngleSource.kt` if needed:
+`HingeAngleSource.kt` maps the reported hinge angle to 0…1:
 
 ```kotlin
 var closedAngle = 0f
 var openAngle = 180f
 ```
 
-For example, if a device reports roughly 2° closed and 178° fully open, use those values to make the transition hit its endpoints more cleanly.
+If the real Fold8 reports slightly different endpoints, tune these two values after checking the device.
 
 ## Build
 
@@ -35,11 +47,15 @@ Recommended:
 
 - Android Studio / JDK 17
 - Galaxy Z Fold8
-- USB debugging enabled for direct install/testing
+- USB debugging enabled
 
 Package / application ID:
 
 `com.qet1234.fold8duotransition`
+
+Version:
+
+`0.3.0 (versionCode 4)`
 
 ## GitHub Actions
 
