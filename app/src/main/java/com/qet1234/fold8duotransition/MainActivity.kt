@@ -1,18 +1,24 @@
 package com.qet1234.fold8duotransition
 
 import android.app.Activity
+import android.app.role.RoleManager
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
 
 class MainActivity : Activity() {
 
-    private lateinit var mainView: DuoTransitionView
+    private lateinit var transitionView: DuoTransitionView
+    private lateinit var launcherView: LauncherHomeView
     private lateinit var debugText: TextView
+    private lateinit var homeRoleButton: Button
     private lateinit var hingeSource: HingeAngleSource
 
     private var lastProgress = 1f
@@ -29,19 +35,35 @@ class MainActivity : Activity() {
             )
         }
 
-        mainView = DuoTransitionView(this).apply { setSide(0f) }
+        transitionView = DuoTransitionView(this).apply { setSide(0f) }
+        launcherView = LauncherHomeView(this)
+
         debugText = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundColor(0x88000000.toInt())
-            textSize = 12f
-            setPadding(20, 12, 20, 12)
-            text = "Waiting for hinge sensor…"
+            textSize = 11f
+            setPadding(18, 10, 18, 10)
             visibility = View.GONE
+            setOnClickListener { visibility = View.GONE }
+        }
+
+        homeRoleButton = Button(this).apply {
+            text = "기본 홈 앱으로 설정"
+            textSize = 13f
+            isAllCaps = false
+            setOnClickListener { requestHomeRole() }
         }
 
         val root = FrameLayout(this)
         root.addView(
-            mainView,
+            transitionView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        root.addView(
+            launcherView,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -53,14 +75,16 @@ class MainActivity : Activity() {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.START
-            ).apply { setMargins(24, 24, 24, 24) }
+            ).apply { setMargins(18, 18, 18, 18) }
         )
-
-        root.setOnLongClickListener {
-            debugText.visibility = if (debugText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-            refreshDebugText()
-            true
-        }
+        root.addView(
+            homeRoleButton,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            ).apply { bottomMargin = (116 * resources.displayMetrics.density).toInt() }
+        )
 
         setContentView(root)
 
@@ -76,8 +100,10 @@ class MainActivity : Activity() {
             },
             onUnavailable = {
                 runOnUiThread {
+                    lastProgress = if (resources.configuration.smallestScreenWidthDp >= 600) 1f else 0f
+                    applyMotion(lastProgress, 0f)
                     debugText.visibility = View.VISIBLE
-                    debugText.text = "Hinge sensor unavailable • ${mainView.renderModeLabel}"
+                    debugText.text = "Hinge sensor unavailable • launcher remains usable"
                 }
             }
         )
@@ -85,6 +111,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        launcherView.refreshApps()
+        updateHomeRoleButton()
         hingeSource.start()
         applyMotion(lastProgress, lastVelocity)
     }
@@ -95,15 +123,57 @@ class MainActivity : Activity() {
     }
 
     private fun applyMotion(progress: Float, velocity: Float) {
-        // Rendering failures are contained inside DuoTransitionView. The sensor callback
-        // must never be able to take down the Activity while the device is folding.
-        runCatching { mainView.setMotion(progress, velocity) }
+        // Rendering failures are contained in the background renderer. The real app
+        // icons remain interactive after the fold finishes even if AGSL is unavailable.
+        runCatching { transitionView.setMotion(progress, velocity) }
+        runCatching { launcherView.setFoldMotion(progress, velocity) }
         refreshDebugText()
+    }
+
+    private fun requestHomeRole() {
+        val roleManager = getSystemService(RoleManager::class.java)
+        val launched = runCatching {
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+            ) {
+                startActivityForResult(
+                    roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME),
+                    REQUEST_HOME_ROLE
+                )
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+
+        if (!launched) {
+            runCatching { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+        }
+    }
+
+    private fun updateHomeRoleButton() {
+        val held = runCatching {
+            val roleManager = getSystemService(RoleManager::class.java)
+            roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+        }.getOrDefault(false)
+
+        homeRoleButton.visibility = if (held) View.GONE else View.VISIBLE
+    }
+
+    @Deprecated("Kept for RoleManager request compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_HOME_ROLE) updateHomeRoleButton()
     }
 
     private fun refreshDebugText() {
         if (debugText.visibility != View.VISIBLE) return
-        debugText.text = "hinge %.1f°  •  progress %.3f  •  velocity %+.0f°/s  •  %s"
-            .format(lastAngle, lastProgress, lastVelocity, mainView.renderModeLabel)
+        debugText.text = "hinge %.1f° • progress %.3f • velocity %+.0f°/s • %s"
+            .format(lastAngle, lastProgress, lastVelocity, transitionView.renderModeLabel)
+    }
+
+    companion object {
+        private const val REQUEST_HOME_ROLE = 7001
     }
 }
