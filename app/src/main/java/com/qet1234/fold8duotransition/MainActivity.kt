@@ -6,6 +6,7 @@ import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.view.Display
 import android.view.Gravity
+import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -33,10 +34,11 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
         mainView = DuoTransitionView(this).apply { setSide(0f) }
         debugText = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0x55000000)
+            setBackgroundColor(0x66000000)
             textSize = 12f
             setPadding(20, 12, 20, 12)
             text = "Waiting for hinge sensor…"
+            visibility = View.GONE
         }
 
         val root = FrameLayout(this)
@@ -55,6 +57,10 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
                 Gravity.TOP or Gravity.START
             ).apply { setMargins(24, 24, 24, 24) }
         )
+        root.setOnLongClickListener {
+            debugText.visibility = if (debugText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            true
+        }
         setContentView(root)
 
         displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
@@ -72,6 +78,7 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
             },
             onUnavailable = {
                 runOnUiThread {
+                    debugText.visibility = View.VISIBLE
                     debugText.text = "TYPE_HINGE_ANGLE unavailable on this device"
                 }
             }
