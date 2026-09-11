@@ -1,26 +1,20 @@
 package com.qet1234.fold8duotransition
 
 import android.app.Activity
-import android.content.Context
-import android.hardware.display.DisplayManager
 import android.os.Bundle
-import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
-import java.util.concurrent.CopyOnWriteArrayList
 
-class MainActivity : Activity(), DisplayManager.DisplayListener {
+class MainActivity : Activity() {
 
     private lateinit var mainView: DuoTransitionView
     private lateinit var debugText: TextView
     private lateinit var hingeSource: HingeAngleSource
-    private lateinit var displayManager: DisplayManager
 
-    private val presentations = CopyOnWriteArrayList<DuoPresentation>()
     private var lastProgress = 1f
     private var lastAngle = 180f
     private var lastVelocity = 0f
@@ -29,12 +23,16 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
         super.onCreate(savedInstanceState)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.insetsController?.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+        runCatching {
+            window.insetsController?.hide(
+                WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()
+            )
+        }
 
         mainView = DuoTransitionView(this).apply { setSide(0f) }
         debugText = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0x66000000)
+            setBackgroundColor(0x88000000.toInt())
             textSize = 12f
             setPadding(20, 12, 20, 12)
             text = "Waiting for hinge sensor…"
@@ -57,14 +55,14 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
                 Gravity.TOP or Gravity.START
             ).apply { setMargins(24, 24, 24, 24) }
         )
+
         root.setOnLongClickListener {
             debugText.visibility = if (debugText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            refreshDebugText()
             true
         }
-        setContentView(root)
 
-        displayManager = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        displayManager.registerDisplayListener(this, null)
+        setContentView(root)
 
         hingeSource = HingeAngleSource(
             context = this,
@@ -73,24 +71,22 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
                     lastAngle = raw
                     lastProgress = progress
                     lastVelocity = velocity
-                    applyMotion(raw, progress, velocity)
+                    applyMotion(progress, velocity)
                 }
             },
             onUnavailable = {
                 runOnUiThread {
                     debugText.visibility = View.VISIBLE
-                    debugText.text = "TYPE_HINGE_ANGLE unavailable on this device"
+                    debugText.text = "Hinge sensor unavailable • ${mainView.renderModeLabel}"
                 }
             }
         )
-
-        refreshPresentations()
     }
 
     override fun onResume() {
         super.onResume()
         hingeSource.start()
-        refreshPresentations()
+        applyMotion(lastProgress, lastVelocity)
     }
 
     override fun onPause() {
@@ -98,46 +94,16 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
         super.onPause()
     }
 
-    override fun onDestroy() {
-        displayManager.unregisterDisplayListener(this)
-        presentations.forEach { runCatching { it.dismiss() } }
-        presentations.clear()
-        super.onDestroy()
+    private fun applyMotion(progress: Float, velocity: Float) {
+        // Rendering failures are contained inside DuoTransitionView. The sensor callback
+        // must never be able to take down the Activity while the device is folding.
+        runCatching { mainView.setMotion(progress, velocity) }
+        refreshDebugText()
     }
 
-    private fun applyMotion(rawAngle: Float, progress: Float, velocity: Float) {
-        mainView.setMotion(progress, velocity)
-        presentations.forEach { it.update(progress, velocity) }
-        debugText.text = "hinge %.1f°  •  progress %.3f  •  velocity %+.0f°/s"
-            .format(rawAngle, progress, velocity)
+    private fun refreshDebugText() {
+        if (debugText.visibility != View.VISIBLE) return
+        debugText.text = "hinge %.1f°  •  progress %.3f  •  velocity %+.0f°/s  •  %s"
+            .format(lastAngle, lastProgress, lastVelocity, mainView.renderModeLabel)
     }
-
-    private fun refreshPresentations() {
-        val currentId = display?.displayId ?: Display.DEFAULT_DISPLAY
-        val available = displayManager.displays
-            .filter { it.displayId != currentId && it.state != Display.STATE_OFF }
-
-        val availableIds = available.map { it.displayId }.toSet()
-        presentations.filter { it.display.displayId !in availableIds }.forEach {
-            runCatching { it.dismiss() }
-            presentations.remove(it)
-        }
-
-        val existingIds = presentations.map { it.display.displayId }.toSet()
-        available.filter { it.displayId !in existingIds }.forEach { target ->
-            runCatching {
-                DuoPresentation(this, target).also { presentation ->
-                    presentation.show()
-                    presentation.update(lastProgress, lastVelocity)
-                    presentations += presentation
-                }
-            }
-        }
-
-        applyMotion(lastAngle, lastProgress, lastVelocity)
-    }
-
-    override fun onDisplayAdded(displayId: Int) = refreshPresentations()
-    override fun onDisplayRemoved(displayId: Int) = refreshPresentations()
-    override fun onDisplayChanged(displayId: Int) = refreshPresentations()
 }
