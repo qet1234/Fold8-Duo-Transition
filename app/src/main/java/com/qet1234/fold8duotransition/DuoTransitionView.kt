@@ -10,27 +10,23 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.RuntimeShader
 import android.graphics.Shader
-import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
-import kotlin.math.min
 
 /**
- * High-fidelity hinge transition with a crash-safe fallback renderer.
+ * Fold-reactive wallpaper/backdrop renderer.
  *
- * RuntimeShader failures are caught at construction and draw time. When AGSL is not
- * usable on the current device/GPU, the view automatically falls back to a Canvas
- * transition instead of crashing the app.
+ * Real launcher icons are rendered by LauncherHomeView. This view intentionally draws
+ * only the animated background so the user never sees duplicate/fake icons during a
+ * fold. AGSL remains optional and automatically falls back to Canvas on GPU failure.
  */
 class DuoTransitionView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    // Intentionally smaller than the device's native resolution. These are only mock
-    // screenshots and get scaled by the GPU. This cuts bitmap memory by roughly 75%.
-    private val outerBitmap: Bitmap = createHomeMock(540, 1260, false)
-    private val innerBitmap: Bitmap = createHomeMock(1104, 920, true)
+    private val outerBitmap = createBackdrop(360, 840, false)
+    private val innerBitmap = createBackdrop(840, 700, true)
 
     private val outerShader = BitmapShader(outerBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
     private val innerShader = BitmapShader(innerBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
@@ -79,7 +75,6 @@ class DuoTransitionView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w <= 0 || h <= 0) return
-
         runCatching {
             outerShader.setLocalMatrix(centerCropMatrix(outerBitmap, w, h))
             innerShader.setLocalMatrix(centerCropMatrix(innerBitmap, w, h))
@@ -94,49 +89,32 @@ class DuoTransitionView @JvmOverloads constructor(
 
         val shader = runtimeShader
         if (shader != null && !shaderFailed) {
-            val rendered = runCatching {
+            val success = runCatching {
                 shader.setFloatUniform("resolution", width.toFloat(), height.toFloat())
                 shader.setFloatUniform("progress", progress)
                 shader.setFloatUniform("velocity", velocity)
                 shader.setFloatUniform("side", side)
                 canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), shaderPaint)
             }.isSuccess
-
-            if (rendered) return
+            if (success) return
             shaderFailed = true
         }
 
         drawFallback(canvas)
     }
 
-    /**
-     * Lightweight fallback that still reacts continuously to the hinge. It uses only
-     * stable Canvas primitives so a GPU-specific AGSL failure cannot terminate the app.
-     */
     private fun drawFallback(canvas: Canvas) {
         val t = progress * progress * (3f - 2f * progress)
-        val speed = (kotlin.math.abs(velocity) / 520f).coerceIn(0f, 1f)
         val fold = kotlin.math.sin(t * Math.PI).toFloat().coerceAtLeast(0f)
-
         val dst = RectF(0f, 0f, width.toFloat(), height.toFloat())
 
         fallbackPaint.alpha = ((1f - t) * 255f).toInt().coerceIn(0, 255)
-        canvas.save()
-        val outerScale = 1f - fold * (0.025f + 0.018f * speed)
-        val outerPivotX = if (side < 0.5f) width.toFloat() else 0f
-        canvas.scale(outerScale, 1f - fold * 0.012f, outerPivotX, height * 0.5f)
         canvas.drawBitmap(outerBitmap, null, dst, fallbackPaint)
-        canvas.restore()
 
         fallbackPaint.alpha = (t * 255f).toInt().coerceIn(0, 255)
-        canvas.save()
-        val innerScale = 0.965f + t * 0.035f
-        val innerPivotX = if (side < 0.5f) width.toFloat() else 0f
-        canvas.scale(innerScale, 0.985f + t * 0.015f, innerPivotX, height * 0.5f)
         canvas.drawBitmap(innerBitmap, null, dst, fallbackPaint)
-        canvas.restore()
 
-        val seamWidth = width * (0.035f + fold * 0.025f)
+        val seamWidth = width * (0.025f + fold * 0.035f)
         val hingeX = if (side < 0.5f) width.toFloat() else 0f
         val left = if (side < 0.5f) hingeX - seamWidth else hingeX
         val right = if (side < 0.5f) hingeX else hingeX + seamWidth
@@ -146,14 +124,14 @@ class DuoTransitionView @JvmOverloads constructor(
             right,
             0f,
             if (side < 0.5f) {
-                intArrayOf(0x00101010, 0x99101010.toInt())
+                intArrayOf(0x00101010, 0xA0101010.toInt())
             } else {
-                intArrayOf(0x99101010.toInt(), 0x00101010)
+                intArrayOf(0xA0101010.toInt(), 0x00101010)
             },
             null,
             Shader.TileMode.CLAMP
         )
-        seamPaint.alpha = (fold * 220f).toInt().coerceIn(0, 220)
+        seamPaint.alpha = (fold * 210f).toInt().coerceIn(0, 210)
         canvas.drawRect(left, 0f, right, height.toFloat(), seamPaint)
         seamPaint.shader = null
     }
@@ -170,112 +148,38 @@ class DuoTransitionView @JvmOverloads constructor(
         }
     }
 
-    private fun createHomeMock(w: Int, h: Int, inner: Boolean): Bitmap {
+    private fun createBackdrop(w: Int, h: Int, inner: Boolean): Bitmap {
         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         val colors = if (inner) {
-            intArrayOf(0xFF0D2740.toInt(), 0xFF244C69.toInt(), 0xFF4D325F.toInt())
+            intArrayOf(0xFF091F36.toInt(), 0xFF1F4966.toInt(), 0xFF513662.toInt())
         } else {
-            intArrayOf(0xFF24143D.toInt(), 0xFF664159.toInt(), 0xFF173B61.toInt())
+            intArrayOf(0xFF211238.toInt(), 0xFF68445C.toInt(), 0xFF123A62.toInt())
         }
-        p.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), colors, null, Shader.TileMode.CLAMP)
-        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
-        p.shader = null
+        paint.shader = LinearGradient(
+            0f,
+            0f,
+            w.toFloat(),
+            h.toFloat(),
+            colors,
+            null,
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
 
-        p.shader = LinearGradient(
-            0f, 0f, 0f, h * 0.42f,
+        paint.shader = LinearGradient(
+            0f,
+            0f,
+            0f,
+            h * 0.62f,
             intArrayOf(0x28FFFFFF, 0x00FFFFFF),
             null,
             Shader.TileMode.CLAMP
         )
-        canvas.drawRect(0f, 0f, w.toFloat(), h * 0.45f, p)
-        p.shader = null
-
-        val pad = w * 0.06f
-        p.color = 0xEEFFFFFF.toInt()
-        p.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        p.textSize = w * if (inner) 0.075f else 0.105f
-        canvas.drawText("12:28", pad, h * 0.105f, p)
-
-        p.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        p.textSize = w * if (inner) 0.023f else 0.033f
-        p.color = 0xCFFFFFFF.toInt()
-        canvas.drawText("Friday, September 11", pad, h * 0.14f, p)
-
-        val widgetTop = h * 0.18f
-        val widgetH = h * if (inner) 0.18f else 0.16f
-        p.color = 0x2FFFFFFF
-        canvas.drawRoundRect(
-            RectF(pad, widgetTop, w - pad, widgetTop + widgetH),
-            w * 0.04f,
-            w * 0.04f,
-            p
-        )
-
-        p.color = 0xDFFFFFFF.toInt()
-        p.textSize = w * if (inner) 0.027f else 0.038f
-        p.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        canvas.drawText(if (inner) "Expanded workspace" else "Cover home", pad * 1.55f, widgetTop + widgetH * 0.38f, p)
-        p.color = 0xAFFFFFFF.toInt()
-        p.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        p.textSize *= 0.78f
-        canvas.drawText("Hinge-reactive transition demo", pad * 1.55f, widgetTop + widgetH * 0.65f, p)
-
-        val columns = if (inner) 6 else 4
-        val rows = if (inner) 3 else 5
-        val startY = h * 0.43f
-        val usableW = w - pad * 2
-        val stepX = usableW / columns
-        val stepY = h * (if (inner) 0.16f else 0.105f)
-        val radius = min(stepX, stepY) * 0.25f
-        val iconColors = intArrayOf(
-            0xFFEAF0FF.toInt(), 0xFFFFE9D7.toInt(), 0xFFDDF4F1.toInt(),
-            0xFFFFE2EE.toInt(), 0xFFE2F5E7.toInt(), 0xFFDDEBFF.toInt()
-        )
-
-        for (r in 0 until rows) {
-            for (c in 0 until columns) {
-                val cx = pad + stepX * (c + 0.5f)
-                val cy = startY + stepY * r
-                p.color = iconColors[(r * columns + c) % iconColors.size]
-                canvas.drawRoundRect(
-                    RectF(cx - radius, cy - radius, cx + radius, cy + radius),
-                    radius * 0.34f,
-                    radius * 0.34f,
-                    p
-                )
-                p.color = 0x26FFFFFF
-                canvas.drawCircle(cx - radius * 0.22f, cy - radius * 0.22f, radius * 0.34f, p)
-            }
-        }
-
-        p.color = 0x35FFFFFF
-        val dockH = h * 0.078f
-        val dockBottom = h - pad
-        canvas.drawRoundRect(
-            RectF(pad, dockBottom - dockH, w - pad, dockBottom),
-            dockH * 0.42f,
-            dockH * 0.42f,
-            p
-        )
-
-        val dockCount = if (inner) 6 else 4
-        val dockStep = (w - pad * 2) / dockCount
-        val dockRadius = dockH * 0.24f
-        for (i in 0 until dockCount) {
-            val cx = pad + dockStep * (i + 0.5f)
-            val cy = dockBottom - dockH * 0.5f
-            p.color = iconColors[(i + 2) % iconColors.size]
-            canvas.drawRoundRect(
-                RectF(cx - dockRadius, cy - dockRadius, cx + dockRadius, cy + dockRadius),
-                dockRadius * 0.35f,
-                dockRadius * 0.35f,
-                p
-            )
-        }
-
+        canvas.drawRect(0f, 0f, w.toFloat(), h * 0.68f, paint)
+        paint.shader = null
         return bitmap
     }
 
@@ -292,22 +196,18 @@ class DuoTransitionView @JvmOverloads constructor(
                 return x * x * (3.0 - 2.0 * x);
             }
 
-            half4 blurOuter(float2 p, float amount, float dir) {
+            half4 sampleOuter(float2 p, float blurPx, float dir) {
                 half4 c0 = outerImage.eval(p);
-                half4 c1 = outerImage.eval(p + float2(dir * amount * 0.24, 0.0));
-                half4 c2 = outerImage.eval(p - float2(dir * amount * 0.24, 0.0));
-                half4 c3 = outerImage.eval(p + float2(dir * amount * 0.55, 0.0));
-                half4 c4 = outerImage.eval(p - float2(dir * amount * 0.55, 0.0));
-                return c0 * 0.34 + (c1 + c2) * 0.22 + (c3 + c4) * 0.11;
+                half4 c1 = outerImage.eval(p + float2(dir * blurPx * 0.45, 0.0));
+                half4 c2 = outerImage.eval(p - float2(dir * blurPx * 0.45, 0.0));
+                return c0 * 0.56 + (c1 + c2) * 0.22;
             }
 
-            half4 blurInner(float2 p, float amount, float dir) {
+            half4 sampleInner(float2 p, float blurPx, float dir) {
                 half4 c0 = innerImage.eval(p);
-                half4 c1 = innerImage.eval(p + float2(dir * amount * 0.24, 0.0));
-                half4 c2 = innerImage.eval(p - float2(dir * amount * 0.24, 0.0));
-                half4 c3 = innerImage.eval(p + float2(dir * amount * 0.55, 0.0));
-                half4 c4 = innerImage.eval(p - float2(dir * amount * 0.55, 0.0));
-                return c0 * 0.34 + (c1 + c2) * 0.22 + (c3 + c4) * 0.11;
+                half4 c1 = innerImage.eval(p + float2(dir * blurPx * 0.45, 0.0));
+                half4 c2 = innerImage.eval(p - float2(dir * blurPx * 0.45, 0.0));
+                return c0 * 0.56 + (c1 + c2) * 0.22;
             }
 
             half4 main(float2 p) {
@@ -318,38 +218,30 @@ class DuoTransitionView @JvmOverloads constructor(
 
                 float hingeDistance = side < 0.5 ? (1.0 - uv.x) : uv.x;
                 float direction = side < 0.5 ? 1.0 : -1.0;
-                float hingeNear = exp(-hingeDistance * 7.0);
-                float hingeTight = exp(-hingeDistance * 24.0);
+                float nearHinge = exp(-hingeDistance * 7.2);
+                float tightHinge = exp(-hingeDistance * 26.0);
 
-                float fold = mid * (0.82 + speed * 0.18);
+                float fold = mid * (0.84 + speed * 0.16);
                 float y = uv.y - 0.5;
-                float barrel = 1.0 - clamp(y * y * 1.65, 0.0, 0.42);
+                float curve = 1.0 - clamp(y * y * 1.45, 0.0, 0.40);
+                float pull = resolution.x * nearHinge * fold * curve * (0.018 + speed * 0.022);
 
-                float pullPx = resolution.x * fold * hingeNear * barrel * (0.024 + 0.032 * speed);
-                float perspectivePx = resolution.x * fold * hingeNear * hingeDistance * 0.050;
-                float verticalPx = y * resolution.y * fold * hingeNear * 0.024;
+                float2 outerP = p + float2(direction * pull, y * resolution.y * nearHinge * fold * 0.012);
+                float2 innerP = p - float2(direction * pull * 0.44, y * resolution.y * nearHinge * fold * 0.006);
 
-                float2 outerP = p + float2(direction * (pullPx + perspectivePx), verticalPx);
-                float2 innerP = p - float2(direction * (pullPx * 0.52 + perspectivePx * 0.28), verticalPx * 0.45);
+                float blurPx = 0.7 + nearHinge * fold * (3.0 + speed * min(resolution.x, resolution.y) * 0.012);
+                half4 a = sampleOuter(outerP, blurPx, direction);
+                half4 b = sampleInner(innerP, blurPx * 0.75, direction);
 
-                float blurPx = 0.75 + hingeNear * fold * (4.0 + speed * min(resolution.x, resolution.y) * 0.020);
-                half4 fromColor = blurOuter(outerP, blurPx, direction);
-                half4 toColor = blurInner(innerP, blurPx * 0.72, direction);
+                float lead = (1.0 - clamp(hingeDistance, 0.0, 1.0)) * 0.10;
+                float blend = smoothstep(0.08, 0.92, t + lead - 0.05);
+                half4 color = mix(a, b, blend);
 
-                float hingeLead = (1.0 - clamp(hingeDistance, 0.0, 1.0)) * 0.13;
-                float blend = smoothstep(0.07, 0.93, t + hingeLead - 0.065);
-                half4 color = mix(fromColor, toColor, blend);
+                float shadow = fold * nearHinge * 0.18 + fold * tightHinge * 0.16;
+                color.rgb *= half3(clamp(1.0 - shadow, 0.62, 1.0));
 
-                float foldShadow = fold * hingeNear * (0.22 + speed * 0.07);
-                float seamShadow = fold * hingeTight * 0.20;
-                float shade = 1.0 - foldShadow - seamShadow;
-                color.rgb *= half3(clamp(shade, 0.58, 1.0));
-
-                float rim = exp(-abs(hingeDistance - 0.016) * 95.0) * fold * (0.08 + speed * 0.035);
+                float rim = exp(-abs(hingeDistance - 0.015) * 100.0) * fold * 0.07;
                 color.rgb += half3(rim);
-
-                float contrast = 1.0 + fold * 0.045;
-                color.rgb = (color.rgb - half3(0.5)) * half3(contrast) + half3(0.5);
                 return color;
             }
         """
