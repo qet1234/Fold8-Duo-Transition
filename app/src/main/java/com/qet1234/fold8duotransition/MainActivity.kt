@@ -50,7 +50,7 @@ class MainActivity : Activity() {
         homeRoleButton = Button(this).apply {
             text = "기본 홈 앱으로 설정"
             textSize = 13f
-            isAllCaps = false
+            setAllCaps(false)
             setOnClickListener { requestHomeRole() }
         }
 
@@ -123,8 +123,6 @@ class MainActivity : Activity() {
     }
 
     private fun applyMotion(progress: Float, velocity: Float) {
-        // Rendering failures are contained in the background renderer. The real app
-        // icons remain interactive after the fold finishes even if AGSL is unavailable.
         runCatching { transitionView.setMotion(progress, velocity) }
         runCatching { launcherView.setFoldMotion(progress, velocity) }
         refreshDebugText()
