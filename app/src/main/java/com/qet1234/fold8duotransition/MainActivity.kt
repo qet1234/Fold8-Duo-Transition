@@ -22,6 +22,7 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
     private val presentations = CopyOnWriteArrayList<DuoPresentation>()
     private var lastProgress = 1f
     private var lastAngle = 180f
+    private var lastVelocity = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,7 +33,7 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
         mainView = DuoTransitionView(this).apply { setSide(0f) }
         debugText = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundColor(0x66000000)
+            setBackgroundColor(0x55000000)
             textSize = 12f
             setPadding(20, 12, 20, 12)
             text = "Waiting for hinge sensor…"
@@ -61,11 +62,12 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
 
         hingeSource = HingeAngleSource(
             context = this,
-            onAngle = { raw, progress ->
+            onMotion = { raw, progress, velocity ->
                 runOnUiThread {
                     lastAngle = raw
                     lastProgress = progress
-                    applyProgress(raw, progress)
+                    lastVelocity = velocity
+                    applyMotion(raw, progress, velocity)
                 }
             },
             onUnavailable = {
@@ -96,11 +98,11 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
         super.onDestroy()
     }
 
-    private fun applyProgress(rawAngle: Float, progress: Float) {
-        mainView.setProgress(progress)
-        presentations.forEach { it.update(progress) }
-        debugText.text = "hinge %.1f°  •  progress %.3f  •  presentations %d"
-            .format(rawAngle, progress, presentations.size)
+    private fun applyMotion(rawAngle: Float, progress: Float, velocity: Float) {
+        mainView.setMotion(progress, velocity)
+        presentations.forEach { it.update(progress, velocity) }
+        debugText.text = "hinge %.1f°  •  progress %.3f  •  velocity %+.0f°/s"
+            .format(rawAngle, progress, velocity)
     }
 
     private fun refreshPresentations() {
@@ -119,13 +121,13 @@ class MainActivity : Activity(), DisplayManager.DisplayListener {
             runCatching {
                 DuoPresentation(this, target).also { presentation ->
                     presentation.show()
-                    presentation.update(lastProgress)
+                    presentation.update(lastProgress, lastVelocity)
                     presentations += presentation
                 }
             }
         }
 
-        applyProgress(lastAngle, lastProgress)
+        applyMotion(lastAngle, lastProgress, lastVelocity)
     }
 
     override fun onDisplayAdded(displayId: Int) = refreshPresentations()
